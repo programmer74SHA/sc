@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+option go_package = "gitlab.apk-group.net/siem/backend/asset-discovery/api/pb";
+
+message SwitchAsset {
+    string id = 1;
+    string vendor_code = 2;
+    string name = 3;
+    string domain = 4;
+    string hostname = 5;
+    string os_name = 6;
+    string os_version = 7;
+    string description = 8;
+    string asset_type = 9;
+    string discovered_by = 10;
+    int32 risk = 11;
+    bool logging_completed = 12;
+    double asset_value = 13;
+}
+
+message SwitchDetails {
+    string id = 1;
+    string asset_id = 2;
+    string model = 3;
+    string software_version = 4;
+    string serial_number = 5;
+    string system_uptime = 6;
+    string management_ip = 7;
+    string ethernet_mac = 8;
+    string location = 9;
+    string status = 10;
+    string last_sync = 11;
+    string sync_status = 12;
+    int64 scanner_id = 13;
+    string username = 14;
+    string password = 15;
+    int32 port = 16;
+    string brand = 17;
+}
+
+message SwitchInterface {
+    string id = 1;
+    string interface_name = 2;
+    string description = 3;
+    string ip_address = 4;
+    string subnet_mask = 5;
+    string status = 6;
+    string protocol = 7;
+    string mac_address = 8;
+    repeated string vlans = 9;
+    string type = 10;
+    string speed = 11;
+    string duplex = 12;
+    int32 mtu = 13;
+    string mode = 14;
+}
+
+message SwitchVLAN {
+    string id = 1;
+    int32 vlan_id = 2;
+    string vlan_name = 3;
+    string description = 4;
+    string status = 5;
+    repeated string ports = 6;
+    string type = 7;
+    int32 parent = 8;
+    string gateway = 9;
+    string subnet = 10;
+}
+
+message SwitchNeighbor {
+    string id = 1;
+    string device_id = 2;
+    string local_port = 3;
+    string remote_port = 4;
+    string platform = 5;
+    string ip_address = 6;
+    repeated string capabilities = 7;
+    string software = 8;
+    string duplex = 9;
+    string protocol = 10;
+}
+
+message SwitchRoutingEntry {
+    string id = 1;
+    string network = 2;
+    string mask = 3;
+    string next_hop = 4;
+    string interface = 5;
+    int32 metric = 6;
+    int32 admin_distance = 7;
+    string protocol = 8;
+    string age = 9;
+    string tag = 10;
+    string vrf = 11;
+    int32 route_preference = 12;
+}
+
+message Switch {
+    SwitchAsset asset = 1;
+    SwitchDetails details = 2;
+    repeated SwitchInterface interfaces = 3;
+    repeated SwitchVLAN vlans = 4;
+    repeated SwitchNeighbor neighbors = 5;
+    repeated SwitchRoutingEntry routing_table = 6;
+}
+
+message CreateSwitchRequest {
+    SwitchAsset asset = 1;
+    SwitchDetails details = 2;
+    repeated SwitchInterface interfaces = 3;
+    repeated SwitchVLAN vlans = 4;
+    repeated SwitchNeighbor neighbors = 5;
+    repeated SwitchRoutingEntry routing_table = 6;
+}
+
+message CreateSwitchResponse {
+    string id = 1;
+    bool success = 2;
+    string message = 3;
+}
+
+message UpdateSwitchRequest {
+    string id = 1;
+    SwitchAsset asset = 2;
+    SwitchDetails details = 3;
+    repeated SwitchInterface interfaces = 4;
+    repeated SwitchVLAN vlans = 5;
+    repeated SwitchNeighbor neighbors = 6;
+    repeated SwitchRoutingEntry routing_table = 7;
+}
+
+message UpdateSwitchResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message DeleteSwitchRequest {
+    string id = 1;
+}
+
+message DeleteSwitchResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message DeleteSwitchesRequest {
+    repeated string ids = 1;
+    bool exclude = 2;
+}
+
+message DeleteSwitchesResponse {
+    bool success = 1;
+    string message = 2;
+}
