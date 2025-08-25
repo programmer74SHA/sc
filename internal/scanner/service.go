@@ -722,14 +722,14 @@ func (s *scannerService) mergeScanner(existing, incoming domain.ScannerDomain) d
 	// Start with the existing scanner
 	merged := existing
 
-	// Update fields only if they are provided (non-zero values)
+	// Update fields only if they are provided (non-zero/non-empty values)
 	if incoming.Name != "" {
 		merged.Name = incoming.Name
 	}
 	if incoming.ScanType != "" {
 		merged.ScanType = incoming.ScanType
 	}
-	// Status is always updated (even if false)
+	// Status is always updated (even if false) - boolean field
 	merged.Status = incoming.Status
 
 	if incoming.UserID != "" {
@@ -771,9 +771,11 @@ func (s *scannerService) mergeScanner(existing, incoming domain.ScannerDomain) d
 	if incoming.Username != "" {
 		merged.Username = incoming.Username
 	}
+	// For password, only update if it's not empty (empty means "don't change")
 	if incoming.Password != "" {
 		merged.Password = incoming.Password
 	}
+	// For API key, only update if it's not empty (empty means "don't change")
 	if incoming.ApiKey != "" {
 		merged.ApiKey = incoming.ApiKey
 	}

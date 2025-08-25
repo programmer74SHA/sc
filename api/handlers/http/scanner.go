@@ -292,6 +292,7 @@ func UpdateScanner(svcGetter ServiceGetter[*service.ScannerService]) fiber.Handl
 
 		// Get the raw body
 		body := c.Body()
+		logger.Info("Processing scanner update request", "id", id, "bodyLength", len(body))
 
 		// Parse the raw request to access the schedule object
 		var rawRequest map[string]interface{}
@@ -299,7 +300,7 @@ func UpdateScanner(svcGetter ServiceGetter[*service.ScannerService]) fiber.Handl
 			logger.Error("Failed to parse raw request", "error", err)
 			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 				Success: false,
-				Error:   "Failed to parse request body",
+				Error:   fmt.Sprintf("Failed to parse request body: %v", err),
 			})
 		}
 
@@ -309,55 +310,101 @@ func UpdateScanner(svcGetter ServiceGetter[*service.ScannerService]) fiber.Handl
 			logger.Error("Failed to parse request into UpdateScannerRequest", "error", err)
 			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 				Success: false,
-				Error:   "Failed to parse request body",
+				Error:   fmt.Sprintf("Failed to parse request into protobuf structure: %v", err),
 			})
 		}
 
 		// Set the ID from the path parameter
 		req.Id = id
 
+		logger.Info("Validating scanner update", 
+			"id", id, 
+			"scanType", req.ScanType, 
+			"name", req.Name)
+
 		// Validate NMAP-specific fields if this is an NMAP scanner
 		if req.ScanType == "NMAP" {
+			logger.Info("Validating NMAP scanner fields",
+				"target", req.Target,
+				"profileId", req.ProfileId,
+				"ip", req.Ip,
+				"customSwitches", req.CustomSwitches)
+				
 			if err := validateNmapScannerForUpdate(&req, false); err != nil {
 				logger.Error("NMAP scanner update validation failed", "error", err)
 				return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 					Success: false,
-					Error:   err.Error(),
+					Error:   fmt.Sprintf("NMAP validation failed: %v", err),
 				})
 			}
 		}
 
 		// Validate firewall-specific fields if this is a firewall scanner
 		if req.ScanType == "FIREWALL" {
+			logger.Info("Validating FIREWALL scanner fields",
+				"ip", req.Ip,
+				"port", req.Port,
+				"hasApiKey", req.ApiKey != "",
+				"type", req.Type)
+				
 			if err := validateFirewallScanner(req.Ip, req.Port, req.ApiKey, req.Type, false); err != nil {
 				logger.Error("Firewall scanner update validation failed", "error", err)
 				return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 					Success: false,
-					Error:   err.Error(),
+					Error:   fmt.Sprintf("Firewall validation failed: %v", err),
 				})
 			}
 		}
 
 		// Validate switch-specific fields
 		if req.ScanType == "SWITCH" {
+			logger.Info("Validating SWITCH scanner fields",
+				"ip", req.Ip,
+				"port", req.Port,
+				"username", req.Username,
+				"hasPassword", req.Password != "",
+				"passwordLength", len(req.Password),
+				"protocol", req.Protocol,
+				"type", req.Type)
+				
 			if err := validateSwitchScanner(req.Ip, req.Port, req.Username, req.Password, req.Protocol, req.Type, false); err != nil {
-				context.GetLogger(c.UserContext()).Error("Switch scanner update validation failed", "error", err)
+				logger.Error("Switch scanner update validation failed", "error", err)
 				return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 					Success: false,
-					Error:   err.Error(),
+					Error:   fmt.Sprintf("Switch validation failed: %v", err),
 				})
 			}
 		}
 
 		// Validate Nessus-specific fields if this is a Nessus scanner
 		if req.ScanType == "NESSUS" {
+			logger.Info("Validating NESSUS scanner fields",
+				"ip", req.Ip,
+				"port", req.Port,
+				"protocol", req.Protocol,
+				"username", req.Username,
+				"hasPassword", req.Password != "",
+				"hasApiKey", req.ApiKey != "",
+				"authType", req.AuthenticationType)
+				
 			if err := validateNessusScanner(req.Ip, req.Port, req.Protocol, req.Username, req.Password, req.ApiKey, req.AuthenticationType, false); err != nil {
 				logger.Error("Nessus scanner update validation failed", "error", err)
 				return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 					Success: false,
-					Error:   err.Error(),
+					Error:   fmt.Sprintf("Nessus validation failed: %v", err),
 				})
 			}
+		}
+
+		// Validate DOMAIN scanner fields
+		if req.ScanType == "DOMAIN" {
+			logger.Info("Validating DOMAIN scanner fields",
+				"ip", req.Ip,
+				"port", req.Port,
+				"username", req.Username,
+				"hasPassword", req.Password != "",
+				"domain", req.Domain,
+				"authType", req.AuthenticationType)
 		}
 
 		// Process schedule fields if schedule object exists
@@ -385,7 +432,10 @@ func UpdateScanner(svcGetter ServiceGetter[*service.ScannerService]) fiber.Handl
 		// Call the service to update the scanner
 		response, err := srv.UpdateScanner(ctx, &req)
 		if err != nil {
-			logger.Error("Failed to update scanner", "id", id, "error", err)
+			logger.Error("Failed to update scanner", 
+				"id", id, 
+				"error", err,
+				"errorType", fmt.Sprintf("%T", err))
 
 			if errors.Is(err, service.ErrScannerNotFound) {
 				return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{
@@ -395,12 +445,12 @@ func UpdateScanner(svcGetter ServiceGetter[*service.ScannerService]) fiber.Handl
 			} else if errors.Is(err, service.ErrInvalidScannerInput) {
 				return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 					Success: false,
-					Error:   "Invalid scanner input",
+					Error:   fmt.Sprintf("Invalid scanner input: %v", err),
 				})
 			}
 			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 				Success: false,
-				Error:   err.Error(),
+				Error:   fmt.Sprintf("Failed to update scanner: %v", err),
 			})
 		}
 
@@ -518,20 +568,23 @@ func validateFirewallScanner(ip, port, apiKey, Type string, isCreateOperation bo
 		if Type == "" {
 			return fmt.Errorf("type is required for firewall scanner")
 		}
+	} else {
+		// For updates, only validate non-empty fields
+		// Empty fields mean "don't change this field"
 	}
 
-	// Validate IP format if provided
+	// Validate IP format if provided (for both create and update)
 	if ip != "" && !isValidIPFormat(ip) {
 		return fmt.Errorf("invalid IP address format: %s", ip)
 	}
 
-	// Validate port format if provided
+	// Validate port format if provided (for both create and update)
 	if port != "" && !isValidPortFormat(port) {
 		return fmt.Errorf("invalid port format: %s", port)
 	}
 
-	// API key validation is only required for create operations
-	// For updates, API key can be empty (to keep existing value)
+	// API key validation - for updates, empty API key means "don't change"
+	// For creates, it's required (checked above)
 
 	return nil
 }
@@ -546,24 +599,27 @@ func validateNessusScanner(ip, port, protocol, username, password, apiKey, authT
 		if protocol == "" {
 			return fmt.Errorf("protocol is required for Nessus scanner")
 		}
+	} else {
+		// For updates, only validate non-empty fields
+		// Empty fields mean "don't change this field"
 	}
 
-	// Validate IP format if provided
+	// Validate IP format if provided (for both create and update)
 	if ip != "" && !isValidIPFormat(ip) {
 		return fmt.Errorf("invalid IP address format: %s", ip)
 	}
 
-	// Validate port format if provided
+	// Validate port format if provided (for both create and update)
 	if port != "" && !isValidPortFormat(port) {
 		return fmt.Errorf("invalid port format: %s", port)
 	}
 
-	// Validate protocol if provided
+	// Validate protocol if provided (for both create and update)
 	if protocol != "" && !isValidProtocol(protocol) {
 		return fmt.Errorf("invalid protocol: %s. Must be 'http' or 'https'", protocol)
 	}
 
-	// Validate authentication based on authentication_type
+	// Validate authentication based on authentication_type if provided
 	if authType != "" {
 		switch strings.ToLower(authType) {
 		case "username_password":
@@ -575,12 +631,14 @@ func validateNessusScanner(ip, port, protocol, username, password, apiKey, authT
 					return fmt.Errorf("password is required when authentication_type is 'username_password'")
 				}
 			}
+			// For updates, empty username/password means "don't change"
 		case "api_key":
 			if isCreateOperation {
 				if apiKey == "" {
 					return fmt.Errorf("api_key is required when authentication_type is 'api_key'")
 				}
 			}
+			// For updates, empty apiKey means "don't change"
 		default:
 			return fmt.Errorf("invalid authentication_type: %s. Must be 'username_password' or 'api_key'", authType)
 		}
@@ -1011,10 +1069,25 @@ func processScheduleFields(scheduleObj map[string]interface{}, req *pb.UpdateSca
 		req.ScheduleType = scheduleType
 	}
 
-	// Handle frequency settings
-	if frequencyValue, ok := scheduleObj["frequency_value"].(float64); ok {
-		req.FrequencyValue = int64(frequencyValue)
+	// Handle frequency_value with proper type conversion
+	if frequencyValue, ok := scheduleObj["frequency_value"]; ok {
+		switch v := frequencyValue.(type) {
+		case float64:
+			req.FrequencyValue = int64(v)
+		case string:
+			if v != "" {
+				if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+					req.FrequencyValue = parsed
+				}
+			}
+		case int:
+			req.FrequencyValue = int64(v)
+		case int64:
+			req.FrequencyValue = v
+		}
 	}
+
+	// Handle frequency_unit
 	if frequencyUnit, ok := scheduleObj["frequency_unit"].(string); ok && frequencyUnit != "" {
 		req.FrequencyUnit = frequencyUnit
 	}
@@ -1024,21 +1097,43 @@ func processScheduleFields(scheduleObj map[string]interface{}, req *pb.UpdateSca
 		req.RunTime = runTime
 	}
 
-	// Handle specific time components
-	if month, ok := scheduleObj["month"].(float64); ok {
-		req.Month = int64(month)
+	// Helper function for numeric field conversion
+	convertToInt64 := func(value interface{}) int64 {
+		switch v := value.(type) {
+		case float64:
+			return int64(v)
+		case string:
+			if v == "" {
+				return 0
+			}
+			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+				return parsed
+			}
+			return 0
+		case int:
+			return int64(v)
+		case int64:
+			return v
+		default:
+			return 0
+		}
 	}
-	if week, ok := scheduleObj["week"].(float64); ok {
-		req.Week = int64(week)
+
+	// Handle specific time components with type conversion
+	if month, ok := scheduleObj["month"]; ok {
+		req.Month = convertToInt64(month)
 	}
-	if day, ok := scheduleObj["day"].(float64); ok {
-		req.Day = int64(day)
+	if week, ok := scheduleObj["week"]; ok {
+		req.Week = convertToInt64(week)
 	}
-	if hour, ok := scheduleObj["hour"].(float64); ok {
-		req.Hour = int64(hour)
+	if day, ok := scheduleObj["day"]; ok {
+		req.Day = convertToInt64(day)
 	}
-	if minute, ok := scheduleObj["minute"].(float64); ok {
-		req.Minute = int64(minute)
+	if hour, ok := scheduleObj["hour"]; ok {
+		req.Hour = convertToInt64(hour)
+	}
+	if minute, ok := scheduleObj["minute"]; ok {
+		req.Minute = convertToInt64(minute)
 	}
 }
 
@@ -1291,26 +1386,29 @@ func validateSwitchScanner(ip, port, username, password, protocol, deviceType st
 		if deviceType == "" {
 			return fmt.Errorf("device type is required for switch scanner (e.g., 'Cisco', 'Juniper')")
 		}
+	} else {
+		// For updates, only validate if field is not empty (being changed)
+		// Empty fields in updates mean "don't change this field"
 	}
 
-	// Validate IP format if provided
+	// Validate IP format if provided (for both create and update)
 	if ip != "" && !isValidIPFormat(ip) {
 		return fmt.Errorf("invalid IP address format: %s", ip)
 	}
 
-	// Validate port format if provided
+	// Validate port format if provided (for both create and update)
 	if port != "" && !isValidPortFormat(port) {
 		return fmt.Errorf("invalid port format: %s", port)
 	}
 
-	// Validate protocol (SSH only for now)
+	// Validate protocol if provided (for both create and update)
 	if protocol != "" && strings.ToUpper(protocol) != "SSH" {
 		return fmt.Errorf("invalid protocol: %s. Only SSH is supported", protocol)
 	}
 
-	// Validate device type
-	validDeviceTypes := []string{"Cisco", "Juniper", "Huawei", "HP", "Arista"}
+	// Validate device type if provided (for both create and update)
 	if deviceType != "" {
+		validDeviceTypes := []string{"Cisco", "Juniper", "Huawei", "HP", "Arista"}
 		isValid := false
 		for _, validType := range validDeviceTypes {
 			if strings.EqualFold(deviceType, validType) {
